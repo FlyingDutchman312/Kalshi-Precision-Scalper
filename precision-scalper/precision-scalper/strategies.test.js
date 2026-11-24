@@ -1,0 +1,6 @@
+const {test}=require('node:test');const assert=require('node:assert/strict');const {assess}=require('./strategies');const now=Date.now();const m={ticker:'x',close:new Date(now+100000).toISOString(),at:new Date(now).toISOString(),status:'OBSERVED',sides:[{side:'yes',ask:.92,bid:.91}]};const model={ticker:'x',status:'UNVALIDATED PROXY',pYes:.98,at:m.at,spotAt:now,source:'test'};
+test('baseline and balanced qualify independently',()=>{const r=assess(m,model,now);assert.ok(r.baseline.candidate);assert.ok(r.balanced.candidate);assert.equal(r.conservative.candidate,null);});
+test('missing model permits baseline only',()=>{const r=assess(m,null,now);assert.ok(r.baseline.candidate);assert.equal(r.balanced.reason,'MODEL UNAVAILABLE');});
+test('stale or wrong ticker model rejected',()=>{assert.equal(assess(m,{...model,ticker:'other'},now).balanced.candidate,null);assert.equal(assess(m,{...model,spotAt:now-13000},now).balanced.candidate,null);});
+test('stale quote and time window rejected',()=>{assert.equal(assess({...m,at:new Date(now-13000).toISOString()},model,now).baseline.candidate,null);assert.equal(assess({...m,close:new Date(now+1000).toISOString()},model,now).baseline.candidate,null);});
+test('NO side uses complementary probability',()=>{assert.ok(assess({...m,sides:[{side:'no',ask:.92,bid:.91}]},{...model,pYes:.02},now).balanced.candidate);});
