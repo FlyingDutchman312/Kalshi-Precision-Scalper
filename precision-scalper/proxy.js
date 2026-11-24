@@ -1,9 +1,7 @@
-async function readSpot(symbol){
- const bnb=symbol==='BNB';
- const endpoint=bnb?'https://api.binance.us/api/v3/trades?symbol=BNBUSD&limit=1':`https://api.exchange.coinbase.com/products/${symbol}-USD/ticker`;
- const r=await fetch(endpoint,{headers:{Accept:'application/json','User-Agent':'PrecisionScalperResearch/1.1'},signal:AbortSignal.timeout(4000)});if(!r.ok)throw Error('Spot HTTP '+r.status);
- const j=await r.json();const item=bnb?j[0]:j;const at=bnb?Number(item.time):Date.parse(item.time);const price=Number(item.price);
- if(!Number.isFinite(at)||Date.now()-at>12000||at>Date.now()+2000||!Number.isFinite(price)||price<=0)throw Error('Stale or invalid spot proxy');
- return {at,price,source:bnb?'Binance.US BNB-USD':'Coinbase Exchange USD'};
-}
-module.exports={readSpot};
+async function json(url){const r=await fetch(url,{headers:{Accept:'application/json','User-Agent':'PrecisionScalperResearch/1.2'},signal:AbortSignal.timeout(4000)});if(!r.ok)throw Error('Spot HTTP '+r.status);return r.json();}
+function validate(price,at,source,now=Date.now()){price=Number(price);at=Number(at);if(!Number.isFinite(at)||now-at>12000||at>now+2000||!Number.isFinite(price)||price<=0)throw Error('Stale or invalid spot proxy');return {price,at,source};}
+async function readSpot(symbol){if(symbol!=='BNB'){const j=await json(`https://api.exchange.coinbase.com/products/${symbol}-USD/ticker`);return validate(j.price,Date.parse(j.time),'Coinbase Exchange USD');}
+const errors=[];try{const j=await json('https://api.binance.us/api/v3/trades?symbol=BNBUSD&limit=1');return validate(j[0].price,j[0].time,'Binance.US BNB-USD');}catch(e){errors.push('Binance.US: '+e.message);}
+try{const j=await json('https://api.kraken.com/0/public/Trades?pair=BNBUSD&count=10');if(j.error?.length)throw Error(j.error.join(', '));const rows=Object.entries(j.result||{}).find(([k,v])=>k!=='last'&&Array.isArray(v))?.[1];if(!rows?.length)throw Error('No trades');const t=rows.reduce((a,b)=>Number(b[2])>Number(a[2])?b:a);return validate(t[0],Number(t[2])*1000,'Kraken BNB-USD');}catch(e){errors.push('Kraken: '+e.message);}
+throw Error(errors.join(' | '));}
+module.exports={readSpot,validate};
