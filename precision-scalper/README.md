@@ -10,3 +10,6 @@ Run schema_v11.sql in the existing Supabase SQL editor first. Replace files in t
 
 ## V1.2
 No schema migration. Historical quote scenarios are derived from the existing durable baseline journal, using whole contracts and a $5 all-in hypothetical budget, standard multiplier 1 and conservative cent-rounded fee estimates. No fills, capital allocation, trading signals or orders. History capped at 10,000 records; latest 100 scenarios displayed. Model Brier comparison remains separate; model-filtered profitability is not implemented because V1.1 did not persist executable ask quotes alongside model checkpoints. Kraken BNB/USD is attempted if Binance.US fails; availability must be verified on Render. Switching sources resets model warmup rather than mixing prices.
+
+## V1.2.1 reliability patch
+Accepts query strings on dashboard/API routes, adds automatic reconnect status and local-file warning, and tries Coinbase Exchange BNB-USD before existing fallbacks. Actual trade timestamps and the 12-second freshness limit remain mandatory. Live provider availability must be checked after deployment. No SQL changes; all orders disabled.

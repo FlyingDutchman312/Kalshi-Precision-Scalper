@@ -1,1 +1,1 @@
-{"name":"kalshi-precision-scalper","version":"1.2.0","private":true,"scripts":{"start":"node server.js","test":"node --test"},"engines":{"node":">=22"}}
+{"name":"kalshi-precision-scalper","version":"1.2.1","private":true,"scripts":{"start":"node server.js","test":"node --test"},"engines":{"node":">=22"}}
