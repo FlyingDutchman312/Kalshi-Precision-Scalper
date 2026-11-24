@@ -13,3 +13,6 @@ No schema migration. Historical quote scenarios are derived from the existing du
 
 ## V1.2.1 reliability patch
 Accepts query strings on dashboard/API routes, adds automatic reconnect status and local-file warning, and tries Coinbase Exchange BNB-USD before existing fallbacks. Actual trade timestamps and the 12-second freshness limit remain mandatory. Live provider availability must be checked after deployment. No SQL changes; all orders disabled.
+
+## V1.3 forward strategy research
+Run `schema_v13.sql` in Supabase before deployment. Existing tables and environment variables are unchanged. Four fixed experimental policies collect separate first qualifying observations per strategy/ticker, starting at deployment (no backfill). Reports use hypothetical $5 all-in whole-contract scenarios and official settlement, not fills. Current rejection reasons are displayed; rejection history is not persisted. Each strategy report is capped at the latest 10,000 records. Quote freshness uses local fetch time, not an exchange event timestamp. BNB remains baseline-only whenever its timestamped spot providers fail; no new provider is guaranteed. No order execution exists.
