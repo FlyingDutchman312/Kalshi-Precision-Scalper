@@ -19,3 +19,6 @@ Run `schema_v13.sql` in Supabase before deployment. Existing tables and environm
 
 ## V1.3.1 low bandwidth
 Five-second scanner and strategy polling unchanged. Settlement and historical reports refresh every five minutes; status supports gzip and hidden tabs skip polling. Successful observation inserts are deduplicated in memory until one hour after close; database uniqueness remains authoritative and failed writes retry. Both existing application directories are patched; keep existing Render root. No SQL changes. Live integration and savings require verification.
+
+## V1.4.0 research-only economic edge
+Before deploying, execute `schema_v14.sql` in the existing Supabase SQL editor. It extends the existing strategy check constraint only. Existing strategy rows are unchanged. The new `economic_edge_v14` label is collected prospectively, with a fixed 90% proxy probability floor and 2 percentage point estimated fee-adjusted edge. These are experimental, not calibrated or validated. The original four policies are unchanged. Dashboard diagnostics use settled selected observations, not all forecasts; grouped close-time costs are not actual portfolio exposure. No orders or account access added. Reports remain capped and refresh every five minutes. Existing data is not a new common holdout; compare cohorts by date before interpreting results.
