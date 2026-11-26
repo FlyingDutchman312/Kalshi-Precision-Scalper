@@ -16,3 +16,6 @@ Accepts query strings on dashboard/API routes, adds automatic reconnect status a
 
 ## V1.3 forward strategy research
 Run `schema_v13.sql` in Supabase before deployment. Existing tables and environment variables are unchanged. Four fixed experimental policies collect separate first qualifying observations per strategy/ticker, starting at deployment (no backfill). Reports use hypothetical $5 all-in whole-contract scenarios and official settlement, not fills. Current rejection reasons are displayed; rejection history is not persisted. Each strategy report is capped at the latest 10,000 records. Quote freshness uses local fetch time, not an exchange event timestamp. BNB remains baseline-only whenever its timestamped spot providers fail; no new provider is guaranteed. No order execution exists.
+
+## V1.3.1 low bandwidth
+Five-second scanner and strategy polling unchanged. Settlement and historical reports refresh every five minutes; status supports gzip and hidden tabs skip polling. Successful observation inserts are deduplicated in memory until one hour after close; database uniqueness remains authoritative and failed writes retry. Both existing application directories are patched; keep existing Render root. No SQL changes. Live integration and savings require verification.
