@@ -22,3 +22,24 @@ Five-second scanner and strategy polling unchanged. Settlement and historical re
 
 ## V1.4.0 research-only economic edge
 Before deploying, execute `schema_v14.sql` in the existing Supabase SQL editor. It extends the existing strategy check constraint only. Existing strategy rows are unchanged. The new `economic_edge_v14` label is collected prospectively, with a fixed 90% proxy probability floor and 2 percentage point estimated fee-adjusted edge. These are experimental, not calibrated or validated. The original four policies are unchanged. Dashboard diagnostics use settled selected observations, not all forecasts; grouped close-time costs are not actual portfolio exposure. No orders or account access added. Reports remain capped and refresh every five minutes. Existing data is not a new common holdout; compare cohorts by date before interpreting results.
+
+
+## V1.4.1 public-read reliability
+All Kalshi market reads now use one GET-only queue with a one-second minimum
+spacing and live discovery ahead of settlement work. Concurrent identical reads
+share one request. A 429 stops queued requests and applies shared exponential
+backoff (10 seconds up to 120 seconds plus jitter; response retry/reset headers
+can extend it). Scheduled polling resumes after the backoff; there is no retry
+burst. Public limits can vary, so this reduces load rather than guaranteeing zero
+429s. Discovery quotes are not cached or relabeled as fresh during backoff.
+
+One bounded settlement worker checks at most 20 distinct pending tickers per
+five-minute pass, then updates every matching research table from the same
+finalized official result. Unfinished tickers rotate between passes; failed
+writes remain pending. Market details are cached for one minute, finalized
+results for one hour. `/api/status` exposes `kalshiReads` request, rate-limit,
+coalescing, queue and backoff diagnostics plus `settlement` progress. Journal and
+historical report reads remain every five minutes. No SQL or environment changes
+are needed; preserve the existing Render root. Both existing application copies
+are updated. No orders, account credentials, model formulas or strategy thresholds
+are added or changed.
