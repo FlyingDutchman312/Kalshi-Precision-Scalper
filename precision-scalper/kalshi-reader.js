@@ -41,7 +41,11 @@ function createKalshiReader({fetchImpl=fetch, now=Date.now,
             lastRateLimitAt=new Date(now()).toISOString();
             throw limited();
           }
-          if(!response.ok)throw Error(`Kalshi HTTP ${response.status}`);
+          if (!response.ok) {
+            const error = new Error(`Kalshi HTTP ${response.status}`);
+            error.httpStatus = response.status;
+            throw error;
+          }
           const data=await response.json();
           strikes=0;lastSuccessAt=new Date(now()).toISOString();
           const ttl=data?.market?.status==='finalized'?3600000:job.cacheMs;
@@ -53,7 +57,7 @@ function createKalshiReader({fetchImpl=fetch, now=Date.now,
     } finally {running=false;}
   }
   function get(path) {
-    if(typeof path!=='string'||!/^\/markets(?:\?|\/)[A-Za-z0-9%_=&,.-]+$/.test(path))
+    if(typeof path!=='string'||(!/^\/markets(?:\?|\/)[A-Za-z0-9%_=&,.-]+$/.test(path) && !/^\/historical\/markets\/KX[A-Z0-9-]+$/.test(path)))
       return Promise.reject(Error('Only public market GET paths are allowed'));
     for(const [key,value] of cache)if(value.expires<=now())cache.delete(key);
     const hit=cache.get(path);
@@ -61,7 +65,7 @@ function createKalshiReader({fetchImpl=fetch, now=Date.now,
     if(pending.has(path)){counters.coalesced++;return pending.get(path);}
     if(now()<blockedUntil){counters.deferred++;return Promise.reject(limited());}
     if(queue.length>=80)return Promise.reject(Error('Kalshi read queue full'));
-    const detail=path.startsWith('/markets/');
+    const detail=!path.startsWith('/markets?');
     const promise=new Promise((resolve,reject)=>queue.push({path,resolve,reject,
       created:now(),priority:detail?1:0,maxQueueMs:detail?60000:12000,
       // Live quotes are never served from a cache. Settlement details may be shared.
