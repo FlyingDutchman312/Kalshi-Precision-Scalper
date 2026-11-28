@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Strategy Qualification · Precision Scalper</title>
+<style>
+  :root { color-scheme: dark; font: 16px system-ui; color: #dce6f4; background: #0b111b; }
+  body { margin: auto; max-width: 1200px; padding: 24px; }
+  a { color: #82cfff; }
+  h1 { margin-bottom: 6px; }
+  p { color: #b3c4d9; max-width: 82ch; }
+  strong { color: #54e3b0; }
+  label { display: inline-block; margin: 8px 20px 12px 0; }
+  select { font: inherit; margin-left: 8px; padding: 5px; }
+  section { border: 1px solid #29384c; background: #151f2e; border-radius: 12px; padding: 16px; margin: 16px 0; }
+  .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 10px; border-bottom: 1px solid #29384c; }
+  th { color: #b3c4d9; font-size: .9rem; }
+  details { margin: 14px 0; }
+  summary { cursor: pointer; }
+</style>
+</head>
+<body>
+<a href="/">Precision Scalper</a>
+<h1>V1.5 Strategy Qualification</h1>
+<strong>Research only · One simulated contract per signal</strong>
+<p id="status" role="status">Loading qualification data…</p>
+<main id="report" hidden>
+  <p id="method"></p>
+  <label>Asset <select id="asset"></select></label>
+  <label>Cohort <select id="period"><option value="holdout">Holdout</option><option value="development">Development</option></select></label>
+  <section>
+    <h2>Strategy leaderboard</h2>
+    <p>Ranked by net dollars per reconciled signal at 1¢ slippage for the selected cohort. Qualification uses both cohorts.</p>
+    <div class="scroll"><table>
+      <thead><tr><th>Strategy</th><th>Research qualification</th><th>Reconciled</th><th>Win rate</th>
+      <th>Net / signal</th><th>Net P/L</th><th>Drawdown</th><th>Break-even win rate</th></tr></thead>
+      <tbody id="leaderboard"></tbody>
+    </table></div>
+  </section>
+  <section>
+    <h2>Strategy evidence</h2>
+    <p id="gates"></p>
+    <div id="evidence"></div>
+  </section>
+  <p><span id="fees"></span> <a href="https://kalshi.com/docs/kalshi-fee-schedule.pdf">Kalshi fee schedule</a></p>
+</main>
+<script>
+'use strict';
+
+const byId = id => document.getElementById(id);
+const dollars = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 4 });
+const usd = n => n == null ? '—' : dollars.format(n);
+const pct = n => n == null ? '—' : (n * 100).toFixed(1) + '%';
+const score = n => n == null ? '—' : n.toFixed(4);
+const names = { baseline: 'Baseline', aggressive: 'Aggressive', balanced: 'Balanced',
+  conservative: 'Conservative', economic_edge_v14: 'Economic Edge V1.4' };
+const asset = byId('asset'), period = byId('period');
+let report;
+
+function element(parent, tag, value) {
+  const node = document.createElement(tag);
+  if (value !== undefined) node.textContent = value;
+  parent.append(node);
+  return node;
+}
+
+function addRow(parent, values, tag = 'td') {
+  const row = element(parent, 'tr');
+  for (const value of values) element(row, tag, value);
+}
+
+function table(parent, headers, rows) {
+  const wrapper = element(parent, 'div');
+  wrapper.className = 'scroll';
+  const node = element(wrapper, 'table');
+  addRow(element(node, 'thead'), headers, 'th');
+  const body = element(node, 'tbody');
+  for (const row of rows) addRow(body, row);
+}
+
+function render() {
+  const board = byId('leaderboard'), evidence = byId('evidence');
+  const open = new Set([...evidence.querySelectorAll('details[open]')].map(node => node.dataset.strategy));
+  board.replaceChildren();
+  evidence.replaceChildren();
+  const cohort = period.value;
+  const groups = report.groups.filter(group => group.symbol === asset.value).sort((a, b) =>
+    (b[cohort].stress[1].expectancy ?? -Infinity) - (a[cohort].stress[1].expectancy ?? -Infinity));
+  for (const group of groups) {
+    const sample = group[cohort], scenario = sample.stress[1];
+    const name = names[group.strategy];
+    addRow(board, [name, group.qualified ? 'Qualified for research' : 'Blocked', sample.count,
+      pct(sample.accuracy), usd(scenario.expectancy), usd(scenario.net),
+      usd(scenario.drawdown), pct(scenario.breakEven)]);
+    const details = element(evidence, 'details');
+    details.dataset.strategy = group.strategy;
+    details.open = open.has(group.strategy);
+    element(details, 'summary', name);
+    element(details, 'p', group.blockers.join(' · ') || 'All research gates passed under the stated assumptions.');
+    const a = group.audit;
+    element(details, 'p', `Across both cohorts, ${group.observed} unique observations, ${a.reconciled} reconciled, ${a.open} open, ${a.pending} pending, ${a.overdue} overdue, ${a.unverified} unverified, ${a.mismatch} mismatched, ${a.boundary} crossing the cutoff, ${a.invalid} invalid, ${a.duplicates} duplicates.`);
+    table(details, ['Slippage', 'Priced', 'Unpriceable', 'Fees', 'Net P/L', 'Net / signal', 'Drawdown', 'Break-even'],
+      sample.stress.map(s => [s.cents + '¢', s.fills, s.unpriceable, usd(s.fees), usd(s.net),
+        usd(s.expectancy), usd(s.drawdown), pct(s.breakEven)]));
+    const b = sample.pairedBrier;
+    element(details, 'p', b.count ?
+      `Paired Brier on ${b.count} signals · Model ${score(b.model)} · Same-quote midpoint ${score(b.midpoint)} · Calibration error ${pct(sample.calibrationError)}` :
+      'No reconciled observations with paired model and quote probabilities in this cohort.');
+    if (b.count) table(details, ['Probability bin starts at', 'Signals', 'Mean forecast', 'Observed win rate'],
+      sample.calibration.map(bin => [pct(bin.lower), bin.count, pct(bin.predicted), pct(bin.observed)]));
+  }
+}
+
+async function update() {
+  if (document.hidden) return;
+  try {
+    const response = await fetch('/api/qualification', { signal: AbortSignal.timeout(8000) });
+    const next = await response.json();
+    if (!response.ok || next.error) throw Error(next.error || 'Qualification data unavailable');
+    report = next;
+    if (!asset.options.length) {
+      for (const symbol of new Set(report.groups.map(group => group.symbol))) element(asset, 'option', symbol);
+    }
+    byId('status').textContent = (report.incomplete ? 'Incomplete history. All groups blocked. ' : '') +
+      'Data as of ' + new Date(report.at).toLocaleString();
+    byId('method').textContent = 'First eligible pre-close observation per asset, strategy and market. Development markets close before ' +
+      report.holdoutAt + '. Holdout observations start at that cutoff. Markets crossing it are excluded. P/L uses reconciled settlements in close order.';
+    const r = report.rules;
+    byId('gates').textContent = `Requires at least ${r.development} development and ${r.holdout} holdout settlements, positive net expectancy in every stress scenario, drawdown at or below ${usd(r.maxDrawdown)}, and complete, consistent evidence. Model-dependent strategies also require complete pairs, lower model Brier and calibration error at or below ${pct(r.maxCalibrationError)} in both cohorts.`;
+    byId('fees').textContent = report.fees.assumption;
+    render();
+    byId('report').hidden = false;
+  } catch (error) {
+    byId('report').hidden = true;
+    byId('status').textContent = 'Qualification blocked. ' + error.message;
+  }
+}
+
+asset.addEventListener('change', render);
+period.addEventListener('change', render);
+document.addEventListener('visibilitychange', update);
+update();
+setInterval(update, 60_000);
+</script>
+</body>
+</html>

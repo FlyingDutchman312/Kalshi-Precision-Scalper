@@ -7,7 +7,7 @@ const saved=new Map();const pendingWrites=new Set();async function insertOnce(p,
 async function db(p,method='GET',body,table='precision_scalper_observations'){const r=await fetch(url+'/rest/v1/'+table+p,{method,headers:{apikey:key,Authorization:'Bearer '+key,'Content-Type':'application/json',Prefer:'resolution=ignore-duplicates,return=minimal'},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(8000)});if(!r.ok)throw Error(`Database HTTP ${r.status}`);return method==='GET'?r.json():null;}
 let busy=false,settling=false;async function poll(){if(busy)return;busy=true;try{await Promise.all(symbols.map(async symbol=>{try{const series='KX'+symbol+'15M';const data=await get('/markets?status=open&limit=100&series_ticker='+series);const now=Date.now();const m=(data.markets||[]).filter(m=>Date.parse(m.open_time)<=now&&Date.parse(m.close_time)>now).sort((a,b)=>Date.parse(a.close_time)-Date.parse(b.close_time))[0];if(!m){state.markets[symbol]={status:'NO OPEN MARKET',at:new Date().toISOString()};return;}const q=evaluate(m,now,policy);state.markets[symbol]={...q,ticker:m.ticker,close:m.close_time,at:new Date(now).toISOString(),target:m.floor_strike??null};if(q.candidate&&configured){try{await insertOnce('?on_conflict=ticker',{ticker:m.ticker,symbol,side:q.candidate.side,ask:q.candidate.ask,bid:q.candidate.bid,seconds_left:q.seconds,observed_at:new Date(now).toISOString(),close_at:m.close_time});}catch(e){state.storageError=e.message;}}}catch(e){state.markets[symbol]={status:'ERROR',error:e.message,at:new Date().toISOString()};}}));state.lastPoll=new Date().toISOString();}finally{busy=false;}}
 async function settle(){if(!configured||settling)return;settling=true;try{state.journal=await db('?order=observed_at.desc&limit=100');state.storageError=null;}catch(e){state.storageError=e.message;}finally{settling=false;}}
-const server=http.createServer((req,res)=>{res.setHeader('Cache-Control','no-store');if(req.method!=='GET'){res.writeHead(405);return res.end();}if(req.url.split('?')[0]==='/api/status'){res.setHeader('Content-Type','application/json');state.kalshiReads=kalshiReader.status();const payload=JSON.stringify(state);res.setHeader('Vary','Accept-Encoding');if(/(?:^|,|\s)gzip(?:\s*(?:;|,|$))/i.test(req.headers['accept-encoding']||'')&&!/gzip\s*;\s*q=0(?:\.0+)?(?:,|$)/i.test(req.headers['accept-encoding']||'')){res.setHeader('Content-Encoding','gzip');return zlib.gzip(payload,(err,data)=>{if(err){res.removeHeader('Content-Encoding');return res.end(payload);}res.end(data);});}return res.end(payload);}if(req.url.split('?')[0]==='/'){res.setHeader('Content-Type','text/html; charset=utf-8');return res.end(fs.readFileSync(path.join(__dirname,'public/index.html')));}res.writeHead(404);res.end();});server.listen(Number(process.env.PORT||3000),'0.0.0.0');poll();settle();setInterval(poll,5000);setInterval(settle,300000);
+const server=http.createServer((req,res)=>{res.setHeader('Cache-Control','no-store');if(req.method!=='GET'){res.writeHead(405);return res.end();}if(handleQualification(req.url.split('?')[0],res))return;if(req.url.split('?')[0]==='/api/status'){res.setHeader('Content-Type','application/json');state.kalshiReads=kalshiReader.status();const payload=JSON.stringify(state);res.setHeader('Vary','Accept-Encoding');if(/(?:^|,|\s)gzip(?:\s*(?:;|,|$))/i.test(req.headers['accept-encoding']||'')&&!/gzip\s*;\s*q=0(?:\.0+)?(?:,|$)/i.test(req.headers['accept-encoding']||'')){res.setHeader('Content-Encoding','gzip');return zlib.gzip(payload,(err,data)=>{if(err){res.removeHeader('Content-Encoding');return res.end(payload);}res.end(data);});}return res.end(payload);}if(req.url.split('?')[0]==='/'){res.setHeader('Content-Type','text/html; charset=utf-8');return res.end(fs.readFileSync(path.join(__dirname,'public/index.html')));}res.writeHead(404);res.end();});poll();settle();setInterval(poll,5000);setInterval(settle,300000);
 
 const modelTable='precision_scalper_probability_v11';let modelBusy=false,modelSettling=false;
 async function probabilityPoll(){if(modelBusy)return;modelBusy=true;try{await Promise.all(symbols.map(async symbol=>{try{const tick=await readSpot(symbol);const old=samples[symbol]||[];const history=old.length&&old.at(-1).source!==tick.source?[]:old;if(!history.some(x=>x.at===tick.at))history.push(tick);samples[symbol]=history.filter(x=>x.at>Date.now()-190000).sort((a,b)=>a.at-b.at);const m=state.markets[symbol];const now=Date.now();const close=Date.parse(m?.close);const seconds=(close-now)/1000;const target=m?.target==null?NaN:Number(m.target);if(!m?.ticker||now-Date.parse(m.at)>12000||seconds<=0){state.probability[symbol]={status:'WAIT FOR MARKET',spot:tick.price,spotAt:tick.at};return;}const model=estimate(samples[symbol],target,close,now);if(!model){state.probability[symbol]={status:'WARMUP / DATA GAP',spot:tick.price,spotAt:tick.at};return;}const yes=m.sides?.[0];const marketP=yes&&yes.bid!=null&&yes.ask!=null&&yes.bid>=0&&yes.ask<=1&&yes.ask>=yes.bid?(yes.bid+yes.ask)/2:null;state.probability[symbol]={...model,marketP,status:'UNVALIDATED PROXY',ticker:m.ticker,at:new Date(now).toISOString()};const cp=checkpoint(seconds);if(configured&&cp!==null){try{await insertOnce('?on_conflict=ticker,checkpoint',{ticker:m.ticker,checkpoint:cp,symbol,model:model.model,observed_at:new Date(now).toISOString(),close_at:m.close,seconds_left:seconds,spot:model.spot,target,source:model.source,spot_at:new Date(model.spotAt).toISOString(),p_yes:model.pYes,market_p_yes:marketP},modelTable);}catch(e){state.probabilityError=e.message;}}}catch(e){state.probability[symbol]={status:'PROXY UNAVAILABLE',error:e.message};}}));}finally{modelBusy=false;}}
@@ -37,3 +37,25 @@ async function refreshSettlements(){
   await Promise.all([settle(),probabilitySettle()]);
 }
 refreshSettlements();setInterval(refreshSettlements,300000);
+
+const qualification = require('./qualification').createQualification({ db, get, table: strategyTable });
+function handleQualification(route, res) {
+  if (route === '/api/qualification') {
+    const status = configured ? qualification.status() :
+      { researchOnly: true, qualified: false, error: 'Research database is not configured' };
+    res.writeHead(status.error ? 503 : 200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(status));
+    return true;
+  }
+  if (route === '/qualification') {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.end(fs.readFileSync(path.join(__dirname, 'public/qualification.html')));
+    return true;
+  }
+  return false;
+}
+if (configured) {
+  qualification.refresh();
+  setInterval(qualification.refresh, 300_000);
+}
+server.listen(Number(process.env.PORT||3000),'0.0.0.0');

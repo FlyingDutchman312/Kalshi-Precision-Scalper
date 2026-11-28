@@ -43,3 +43,43 @@ historical report reads remain every five minutes. No SQL or environment changes
 are needed; preserve the existing Render root. Both existing application copies
 are updated. No orders, account credentials, model formulas or strategy thresholds
 are added or changed.
+
+## V1.5 strategy qualification
+
+Open `/qualification` from the scanner. Its read-only API is
+`/api/qualification`. Both application roots are supported. No migration or
+configuration change is required. Qualification reports refresh every five
+minutes. The API blocks qualification when results are stale or a refresh fails.
+
+The cohorts are frozen at 2026-12-01 00:00 UTC. Development contains markets
+closed before that time. Holdout requires an observation at or after that time.
+Markets spanning the boundary are excluded. Existing strategy rows were
+collected before close and feed the development cohort without backfill. This
+split is only prospective if the research protocol was frozen before inspecting
+the holdout. Treat later changes to the analysis as exploratory.
+
+The report deduplicates by strategy and ticker within each asset. Only a
+stored settlement matching Kalshi's finalized ticker, result and close time
+contributes to metrics. Reconciliation checks at most 20 distinct tickers per
+pass via the shared public reader, with historical lookup after a 404. The
+verification cache is in memory, so a restart temporarily blocks groups as
+checks catch up. A closed market with no stored result is overdue after 30
+minutes. A reached 10,000-row cap per strategy blocks qualification globally.
+
+Economic scenarios use one contract at recorded ask plus 0–3¢ adverse
+slippage, held to settlement. Prices at or above $1 after slippage are
+unpriceable and block qualification. Expectancy is per reconciled signal.
+Drawdown starts at zero and follows close order. Break-even uses mean
+fee-inclusive cost for priced contracts. The current Kalshi general fee
+schedule lists a 7% taker coefficient. The report assumes a multiplier of 1
+and deliberately rounds up to the whole cent. Series-specific multipliers,
+historical fee changes, depth and execution are unverified.
+[Kalshi fee schedule](https://kalshi.com/docs/kalshi-fee-schedule.pdf)
+
+Paired Brier compares the chosen-side forecast against its contemporaneous
+quote midpoint on exactly the same reconciled observations. Calibration uses
+fixed 10 percentage-point bins and sample-weighted absolute calibration error.
+Baseline may lack model probabilities. Model-dependent strategies require
+complete pairs. See the dashboard for the fixed research thresholds. These
+thresholds are provisional criteria for research review. The report cannot
+promote a strategy, alter collection policies, or place orders.
